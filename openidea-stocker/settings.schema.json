@@ -1,0 +1,31 @@
+{
+  "title": "Stocker",
+  "properties": {
+    "quoteProvider": {
+      "type": "string",
+      "title": "Stock quote source",
+      "description": "Data source for A-Share, HK and US quotes",
+      "enum": ["sina", "tencent"],
+      "default": "sina"
+    },
+    "colorPattern": {
+      "type": "string",
+      "title": "Color pattern",
+      "enum": ["rugd", "gurd", "none"],
+      "default": "rugd"
+    },
+    "displayNameWithPinyin": {
+      "type": "boolean",
+      "title": "Convert Chinese names to Pinyin",
+      "description": "Example: 平安银行 -> PingAnYinHang",
+      "default": false
+    },
+    "refreshInterval": {
+      "type": "integer",
+      "title": "Refresh interval (seconds)",
+      "description": "Minimum 60s for background refresh; the visible tab refreshes every 5s",
+      "default": 60,
+      "minimum": 60
+    }
+  }
+}

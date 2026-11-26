@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stocker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Self-drawn toolbar (header = "none") -->
+  <div id="toolbar" class="toolbar">
+    <div class="toolbar-left">
+      <button id="btn-add" class="tb-btn" title="Add Favorites">+</button>
+      <button id="btn-refresh" class="tb-btn" title="Refresh Quotes">&#8635;</button>
+      <button id="btn-stop" class="tb-btn" title="Stop Refresh">&#9632;</button>
+      <button id="btn-manage" class="tb-btn" title="Manage Favorites">&#9998;</button>
+    </div>
+    <div class="toolbar-right">
+      <button id="btn-settings" class="tb-btn" title="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <!-- Market tabs -->
+  <div id="tabs" class="tabs">
+    <button class="tab active" data-market="all">ALL</button>
+    <button class="tab" data-market="cn">CN</button>
+    <button class="tab" data-market="hk">HK</button>
+    <button class="tab" data-market="us">US</button>
+    <button class="tab" data-market="crypto">Crypto</button>
+  </div>
+
+  <!-- Table -->
+  <div id="table-wrap" class="table-wrap">
+    <table id="quotes">
+      <thead><tr id="head-row"></tr></thead>
+      <tbody id="body-row"></tbody>
+    </table>
+    <div id="empty" class="empty">No favorites yet. Click + to add symbols.</div>
+  </div>
+
+  <!-- Index bar -->
+  <div id="index-bar" class="index-bar"></div>
+
+  <!-- Context menu -->
+  <div id="ctx-menu" class="ctx-menu hidden">
+    <div id="ctx-delete" class="ctx-item">Delete</div>
+  </div>
+</div>
+
+<!-- Add Favorites dialog -->
+<div id="search-dialog" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-title">Add Favorites</div>
+    <div class="search-top">
+      <div class="mode-row">
+        <label>Search for:</label>
+        <select id="search-mode">
+          <option value="stocks">Stocks (CN/HK/US)</option>
+          <option value="crypto">Crypto</option>
+        </select>
+      </div>
+      <input id="search-input" type="text" placeholder="Type to search stocks (CN/HK/US)" autocomplete="off">
+      <div class="search-header" id="search-header">
+        <span class="col-code">Symbol</span>
+        <span class="col-market">Market</span>
+        <span class="col-name">Name</span>
+        <span class="col-action">Action</span>
+      </div>
+    </div>
+    <div id="search-results" class="search-results"></div>
+    <div class="modal-footer">
+      <button id="search-close" class="btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Favorites dialog -->
+<div id="manage-dialog" class="modal hidden">
+  <div class="modal-box large">
+    <div class="modal-title">Manage Favorites</div>
+    <div id="manage-tabs" class="manage-tabs">
+      <button class="mtab active" data-market="cn">CN</button>
+      <button class="mtab" data-market="hk">HK</button>
+      <button class="mtab" data-market="us">US</button>
+      <button class="mtab" data-market="crypto">Crypto</button>
+    </div>
+    <div class="manage-header" id="manage-header">
+      <span class="m-code">Symbol</span>
+      <span class="m-name">Original Name</span>
+      <span class="m-custom">Custom Name</span>
+      <span class="m-cost">Cost</span>
+      <span class="m-hold">Holdings</span>
+      <span class="m-ops"></span>
+    </div>
+    <div id="manage-list" class="manage-list"></div>
+    <div class="modal-footer">
+      <button id="manage-ok" class="btn primary">OK</button>
+      <button id="manage-cancel" class="btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit favorite inline dialog -->
+<div id="edit-dialog" class="modal hidden">
+  <div class="modal-box small">
+    <div class="modal-title" id="edit-title">Edit</div>
+    <div class="edit-fields">
+      <label>Custom name:<input id="edit-name" type="text"></label>
+      <label>Cost price:<input id="edit-cost" type="text" placeholder=""></label>
+      <label>Holdings:<input id="edit-holdings" type="text" placeholder=""></label>
+      <div id="edit-error" class="field-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="edit-ok" class="btn primary">OK</button>
+      <button id="edit-cancel" class="btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

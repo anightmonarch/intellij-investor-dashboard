@@ -1,0 +1,61 @@
+id = "vermouth.stocker"
+name = "Stocker"
+version = "1.0.0"
+description = "A clean, minimal investor dashboard. Track A-Shares, Hong Kong stocks, US stocks and cryptocurrencies with real-time quotes."
+authors = ["Zihan Ma (original IntelliJ plugin)", "OpenIDEA port"]
+license = "Apache-2.0"
+categories = ["tools"]
+engines.openidea = "^1.3"
+wasm = "dist/plugin.wasm"
+activation = ["on-view:stocker", "on-schedule:60"]
+
+[capabilities]
+required = [
+    "storage",
+    "net:hq.sinajs.cn",
+    "net:qt.gtimg.cn",
+    "net:suggest3.sinajs.cn",
+    "net:smartbox.gtimg.cn",
+]
+
+[[contributes.views]]
+id = "stocker"
+title = "Stocker"
+icon = "icons/logo.svg"
+location = "left"
+secondary = true
+web = "web/index.html"
+header = "none"
+
+[[contributes.commands]]
+id = "refresh"
+title = "Stocker: Refresh Quotes"
+category = "Stocker"
+
+[[contributes.commands]]
+id = "stop"
+title = "Stocker: Stop Refresh"
+category = "Stocker"
+
+[[contributes.commands]]
+id = "add"
+title = "Stocker: Add Favorites"
+category = "Stocker"
+
+[[contributes.commands]]
+id = "manage"
+title = "Stocker: Manage Favorites"
+category = "Stocker"
+
+[[contributes.commands]]
+id = "settings"
+title = "Stocker: Settings"
+category = "Stocker"
+
+[[contributes.commands]]
+id = "clear"
+title = "Stocker: Clear Favorites"
+category = "Stocker"
+
+[contributes.settings]
+schema = "settings.schema.json"
