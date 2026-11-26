@@ -33,41 +33,162 @@ let selectedCode = null;
 let indexSelectedCode = null; // remember the chosen index across refreshes
 
 // ---- bridge ----
-const IN_IDEA = !!(window.openidea && typeof window.openidea.postMessage === 'function');
+// The host injects window.openidea via a script at the top of <head>. It is
+// normally there before this file runs, but we wait for it rather than assume.
+let bridgeReady = !!(window.openidea && typeof window.openidea.postMessage === 'function');
+let previewMode = false;
+let handshakeDone = false;
+let gotReply = false;
+
+function hasBridge() {
+  return !!(window.openidea && typeof window.openidea.postMessage === 'function'
+            && typeof window.openidea.onMessage === 'function');
+}
+
 function send(msg) {
-  if (IN_IDEA) {
+  if (hasBridge()) {
     window.openidea.postMessage(JSON.stringify(msg));
+    if (msg.op === 'suggest') {
+      setTimeout(() => {
+        const box = document.getElementById('search-results');
+        if (box && box.textContent.trim() === '搜索中…') {
+          box.innerHTML = '<div class="search-hint">搜索超时：请确认 设置 › 插件 › Stocker 已允许网络权限</div>';
+        }
+      }, 6000);
+    }
   } else if (msg.op === 'suggest') {
-    // Preview-only mock so the dialog can be visually reviewed without the host.
-    setTimeout(() => {
-      const demo = [
-        { code: 'SH600887', name: '伊利股份', market: 'cn' },
-        { code: 'ETN', name: '伊顿', market: 'us' },
-        { code: 'ITW', name: '伊利诺工具', market: 'us' },
-        { code: 'WYNN', name: '永利', market: 'us' },
-        { code: 'AVY', name: '艾利', market: 'us' },
-      ];
-      renderSuggestions(msg.mode === 'crypto' ? [] : demo);
-    }, 250);
+    previewSuggest(msg);
   }
 }
-if (window.openidea && typeof window.openidea.onMessage === 'function') {
+
+// ---- refresh loop -------------------------------------------------------
+// One market per request. OpenIDEA gives a plugin call a hard 5 s budget and
+// stops a plugin that keeps timing out, so the page — not the plugin — drives
+// the round: ask for cn, wait for its quotes, then hk, and so on.
+const MARKETS = ['cn', 'hk', 'us', 'crypto'];
+let roundQueue = [];
+let inflight = null;
+let inflightTimer = null;
+
+function startRound() {
+  // Never stack rounds: a full queue is already a round in progress.
+  if (roundQueue.length || inflight) return;
+  roundQueue = MARKETS.slice();
+  pump();
+}
+
+function pump() {
+  if (inflight) return;
+  if (!roundQueue.length) return;
+  const m = roundQueue.shift();
+  inflight = m;
+  send({ op: 'refresh', market: m });
+  // A silent market (no network, provider error) must not stall the round.
+  inflightTimer = setTimeout(() => {
+    if (inflight === m) { inflight = null; pump(); }
+  }, 4000);
+}
+
+function doneMarket(m) {
+  if (inflight !== m) return;
+  clearTimeout(inflightTimer);
+  inflight = null;
+  setTimeout(pump, 80);
+}
+
+function rebuildAll() {
+  let all = [];
+  for (const m of MARKETS) all = all.concat(quotes[m] || []);
+  quotes.all = all;
+  let allIdx = [];
+  for (const m of MARKETS) allIdx = allIdx.concat(quotes[m + '_index'] || []);
+  quotes.all_index = allIdx;
+}
+
+function warnNoPlugin() {
+  flash('插件未响应：请确认已在 设置 › 插件 中允许 Stocker 运行');
+}
+
+function previewSuggest(msg) {
+  setTimeout(() => {
+    renderSuggestions(msg.mode === 'crypto' ? [] : [
+      { code: 'SH600887', name: '伊利股份', market: 'cn' },
+      { code: 'ETN', name: '伊顿', market: 'us' },
+      { code: 'ITW', name: '伊利诺工具', market: 'us' },
+      { code: 'WYNN', name: '永利', market: 'us' },
+      { code: 'AVY', name: '艾利', market: 'us' },
+    ]);
+  }, 250);
+}
+
+function registerBridge() {
+  if (!hasBridge()) return false;
   window.openidea.onMessage(function (raw) {
+    gotReply = true;
     let msg; try { msg = JSON.parse(raw); } catch (e) { return; }
     switch (msg.op) {
       case 'state':
+        handshakeDone = true; updateBridgeBadge();
         state = Object.assign({}, state, msg.state);
         applyTheme(); renderHead(); renderTable();
         break;
       case 'quotes':
-        quotes = msg.quotes || {};
+        handshakeDone = true; updateBridgeBadge();
+        quotes[msg.market] = msg.items || [];
+        quotes[msg.market + '_index'] = msg.indices || [];
+        rebuildAll();
+        renderTable(); renderIndexBar();
+        doneMarket(msg.market);
+        break;
+      case 'tick':
+        startRound();
+        break;
+      case 'cleared':
+        quotes = {};
         renderTable(); renderIndexBar();
         break;
       case 'error': flash(msg.message); break;
       case 'suggestions': renderSuggestions(msg.items || []); break;
       case 'openSettings': openSettings(); break;
+      case 'openSearch': openSearch(); break;
+      case 'openManage': openManage(); break;
     }
   });
+  bridgeReady = true;
+  updateBridgeBadge();
+  send({ op: 'ready' });
+  // If the plugin never answers, the page is alive but the plugin is not: it is
+  // disabled, waiting for permission, or stopped after repeated timeouts.
+  setTimeout(() => { if (!gotReply) { warnNoPlugin(); updateBridgeBadge(); } }, 4000);
+  return true;
+}
+
+// Wait briefly for the injected bridge; only fall back to preview if truly absent.
+if (!registerBridge()) {
+  let tries = 0;
+  const t = setInterval(() => {
+    tries++;
+    if (registerBridge()) { clearInterval(t); }
+    else if (tries >= 20) { clearInterval(t); previewMode = true; updateBridgeBadge(); }
+  }, 50);
+}
+
+function updateBridgeBadge() {
+  const el = document.getElementById('bridge-badge');
+  if (!el) return;
+  // Hidden once the plugin answers: the toolbar stays exactly as the original.
+  // Shown only when something is wrong, with the reason in the tooltip.
+  if (handshakeDone) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  if (bridgeReady) {
+    el.textContent = '◐';
+    el.title = '插件未响应：请确认 设置 › 插件 › Stocker 已启用并已授权';
+    el.style.color = '#ef9f27';
+  } else {
+    el.textContent = '○';
+    el.title = '预览模式（未在 IDE 中运行）';
+    el.style.color = '#888';
+  }
 }
 
 function applyTheme() {
@@ -567,15 +688,21 @@ function flash(msg) {
 }
 
 // ---- boot ----
-applyTheme(); renderHead(); renderTable();
-if (IN_IDEA) {
-  send({ op: 'ready' });
-  setInterval(() => send({ op: 'refresh' }), 5000);
-} else {
-  // Preview mode (standalone browser): show representative data so the layout
-  // can be reviewed without the OpenIDEA host. Never active inside the IDE.
-  loadPreviewData();
+applyTheme(); renderHead(); renderTable(); updateBridgeBadge();
+// Only load demo data after we are sure there is no bridge (checked in poll above).
+setTimeout(() => { if (previewMode || !bridgeReady) loadPreviewData(); }, 1200);
+// Inside the IDE the refresh round is driven by `ready` → `tick` → per-market
+// replies; a timer only restarts a round that went quiet (e.g. after the
+// window was hidden and the plugin instance was reclaimed). The period is the
+// original plugin's `refreshInterval`, in seconds.
+function scheduleRound() {
+  const secs = Math.max(3, Number(state.refreshInterval) || 5);
+  setTimeout(() => {
+    if (bridgeReady && !inflight && !roundQueue.length) startRound();
+    scheduleRound();
+  }, secs * 1000);
 }
+scheduleRound();
 
 function loadPreviewData() {
   const raw = [
@@ -592,10 +719,10 @@ function loadPreviewData() {
     low: cur, high: cur, change: Number((cur * pct / 100).toFixed(2)),
     percentage: pct, updateAt: '', cost: null, holdings: null,
   }));
-  quotes.all = quotes.cn.slice();
-  quotes['cn_index'] = [{
+  quotes.cn_index = [{
     code: 'SH000001', name: '上证指数', displayName: '上证指数',
     current: 3481.04, change: 4.57, percentage: 0.13,
   }];
+  rebuildAll();
   renderTable(); renderIndexBar();
 }

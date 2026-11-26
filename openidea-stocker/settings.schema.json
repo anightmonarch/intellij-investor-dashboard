@@ -19,13 +19,6 @@
       "title": "Convert Chinese names to Pinyin",
       "description": "Example: 平安银行 -> PingAnYinHang",
       "default": false
-    },
-    "refreshInterval": {
-      "type": "integer",
-      "title": "Refresh interval (seconds)",
-      "description": "Minimum 60s for background refresh; the visible tab refreshes every 5s",
-      "default": 60,
-      "minimum": 60
     }
   }
 }
