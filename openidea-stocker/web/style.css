@@ -1,16 +1,18 @@
 /* Stocker WebView — 1:1 visual port of the IntelliJ Stocker tool window.
-   All colors come from OpenIDEA theme variables so it follows light/dark automatically. */
+   Structure (top→bottom): title bar with content tabs, toolbar, table, index bar.
+   Colors come from OpenIDEA theme variables so it follows light/dark automatically. */
 
 :root {
-  --up: #e53935;          /* red, overridden per color pattern in JS */
-  --down: #43a047;        /* green */
-  --row-h: 26px;
-  --fg: var(--openidea-fg, #323232);
-  --fg-muted: var(--openidea-fg-muted, #808080);
+  --up: #e53935;
+  --down: #43a047;
+  --zero: var(--openidea-fg, #323232);
+  --fg: var(--openidea-fg, #1f1f1f);
+  --fg-muted: var(--openidea-fg-muted, #6b6b6b);
   --bg: var(--openidea-bg, #ffffff);
+  --bg-elevated: var(--openidea-bg-elevated, #e8e8e8);
   --bg-hover: var(--openidea-bg-hover, #f0f0f0);
   --bg-selected: var(--openidea-bg-selected, #cde3f5);
-  --border: var(--openidea-border, #e0e0e0);
+  --border: var(--openidea-border, #3c3c3c);
   --accent: var(--openidea-accent, #3574f0);
   --danger: var(--openidea-danger, #e53935);
   --font-ui: var(--openidea-font-ui, system-ui, -apple-system, "Segoe UI", sans-serif);
@@ -19,217 +21,210 @@
 }
 
 * { box-sizing: border-box; }
-
 html, body {
-  margin: 0; padding: 0;
-  height: 100%;
-  background: transparent;
-  color: var(--fg);
-  font-family: var(--font-ui);
-  font-size: var(--fs);
+  margin: 0; padding: 0; height: 100%;
+  background: transparent; color: var(--fg);
+  font-family: var(--font-ui); font-size: var(--fs);
   overflow: hidden;
 }
-
 #app { display: flex; flex-direction: column; height: 100%; }
+
+/* ---- title bar with content tabs (IntelliJ tool window style) ---- */
+.titlebar {
+  display: flex; align-items: stretch;
+  height: 36px; min-height: 36px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.tw-title {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap;
+}
+.tw-icon {
+  display: inline-block; width: 16px; height: 16px;
+  background: linear-gradient(#9fdef4, #a7aec1);
+  border-radius: 3px;
+  -webkit-mask: url('icons/logo.svg') center/contain no-repeat;
+  mask: url('icons/logo.svg') center/contain no-repeat;
+  background: var(--fg-muted);
+}
+.tabs { display: flex; align-items: stretch; flex: 1; overflow: hidden; }
+.tab {
+  border: none; background: transparent;
+  color: var(--fg-muted);
+  font-size: 12.5px; font-weight: 500;
+  padding: 0 14px; cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+}
+.tab:hover { color: var(--fg); background: var(--bg-hover); }
+.tab.active {
+  color: var(--fg); font-weight: 600;
+  background: var(--bg-elevated);
+  border-radius: 6px 6px 0 0;
+}
+.tw-close {
+  width: 34px; min-width: 34px;
+  border: none; background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px; cursor: pointer;
+}
+.tw-close:hover { background: var(--bg-hover); color: var(--fg); }
 
 /* ---- toolbar ---- */
 .toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 30px;
-  min-height: 30px;
-  padding: 0 4px;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 34px; min-height: 34px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border);
 }
-.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 2px; }
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 4px; }
 .tb-btn {
-  width: 24px; height: 22px;
+  width: 26px; height: 24px;
   border: none; background: transparent;
   color: var(--fg);
-  font-size: 14px; line-height: 1;
+  font-size: 15px; line-height: 1;
   border-radius: 4px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 .tb-btn:hover { background: var(--bg-hover); }
 .tb-btn:active { background: var(--bg-selected); }
+.tb-btn.stop { color: var(--danger); font-size: 12px; }
 .tb-btn.disabled { opacity: .4; pointer-events: none; }
-
-/* ---- tabs ---- */
-.tabs {
-  display: flex;
-  height: 28px;
-  min-height: 28px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.tab {
-  flex: 1 1 auto;
-  border: none; background: transparent;
-  color: var(--fg-muted);
-  font-size: 12px; font-weight: 500;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  padding: 0 2px;
-}
-.tab:hover { background: var(--bg-hover); }
-.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* ---- table ---- */
 .table-wrap { flex: 1 1 auto; overflow: auto; position: relative; }
 #quotes {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-family: var(--font-mono);
-  font-size: calc(var(--fs) - 1px);
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  font-family: var(--font-ui); font-size: calc(var(--fs) - 0.5px);
 }
 #quotes thead th {
   position: sticky; top: 0; z-index: 2;
   height: 30px;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-ui);
-  font-weight: 600;
+  font-weight: 600; font-size: 12.5px;
   text-align: center;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: pointer; user-select: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding: 0 4px;
 }
 #quotes thead th:last-child { border-right: none; }
 #quotes thead th .sort { font-size: 9px; margin-left: 2px; }
-#quotes tbody tr {
-  height: var(--row-h);
-  border-bottom: 1px solid var(--border);
-}
+#quotes tbody tr { height: 26px; border-bottom: 1px solid var(--border); }
 #quotes tbody tr:hover { background: var(--bg-hover); }
 #quotes tbody tr.selected { background: var(--bg-selected); }
 #quotes tbody td {
-  height: var(--row-h);
-  padding: 0 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-right: none;
+  height: 26px; padding: 0 6px;
+  text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-#quotes tbody td.num { text-align: right; }
-#quotes tbody td.code { text-align: left; color: var(--fg-muted); }
 #quotes tbody td.up { color: var(--up); }
 #quotes tbody td.down { color: var(--down); }
+#quotes tbody td.zero { color: var(--zero); }
+/* Selected rows keep the IDE selection foreground, never the price colors. */
 #quotes tbody tr.selected td.up,
-#quotes tbody tr.selected td.down { color: inherit; }
-#quotes tbody td.positive { font-weight: 600; }
+#quotes tbody tr.selected td.down,
+#quotes tbody tr.selected td.zero { color: inherit; }
 
 .empty {
-  position: absolute; top: 44px; left: 0; right: 0;
-  text-align: center;
-  color: var(--fg-muted);
+  position: absolute; top: 52px; left: 0; right: 0;
+  text-align: center; color: var(--fg-muted);
   padding: 16px 8px;
-  font-family: var(--font-ui);
 }
 .hidden { display: none !important; }
 
-/* ---- index bar ---- */
+/* ---- index bar: 4 equal cells, top border, bold +1px font ---- */
 .index-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 8px;
+  display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  align-items: center; gap: 8px;
+  height: 42px; min-height: 42px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
   background: var(--bg);
-  font-family: var(--font-mono);
-  font-size: calc(var(--fs) - 1px);
-  overflow: hidden;
+}
+.index-select {
+  width: 100%; min-width: 0;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: var(--font-ui); font-size: calc(var(--fs) - 1px);
+  font-weight: 600;
+  cursor: pointer;
+}
+.idx-cell {
+  text-align: center;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: calc(var(--fs) + 1px);
   white-space: nowrap;
 }
-.index-item { display: flex; gap: 5px; align-items: baseline; }
-.index-name { color: var(--fg-muted); font-family: var(--font-ui); font-size: 11px; }
-.index-value { font-weight: 600; }
-.index-item .up { color: var(--up); }
-.index-item .down { color: var(--down); }
+.idx-cell.up { color: var(--up); }
+.idx-cell.down { color: var(--down); }
+.idx-cell.zero { color: var(--zero); }
 
 /* ---- context menu ---- */
 .ctx-menu {
-  position: fixed;
-  z-index: 100;
-  background: var(--bg);
+  position: fixed; z-index: 100;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.2);
-  padding: 4px;
-  min-width: 90px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  padding: 4px; min-width: 90px;
 }
 .ctx-item { padding: 6px 12px; cursor: pointer; border-radius: 4px; }
-.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item:hover { background: var(--accent); color: #fff; }
 
 /* ---- modals ---- */
 .modal {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,.35);
+  background: rgba(0,0,0,.4);
   display: flex; align-items: center; justify-content: center;
   z-index: 200;
 }
 .modal-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--bg); border: 1px solid var(--border);
   border-radius: 10px;
-  width: 560px; max-width: 94vw;
-  max-height: 86vh;
+  width: 560px; max-width: 94vw; max-height: 86vh;
   display: flex; flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0,0,0,.3);
-  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.35); overflow: hidden;
 }
 .modal-box.large { width: 640px; }
 .modal-box.small { width: 380px; }
 .modal-title {
-  padding: 12px 16px;
-  font-size: 14px; font-weight: 600;
+  padding: 12px 16px; font-size: 14px; font-weight: 600;
   border-bottom: 1px solid var(--border);
 }
 .modal-footer {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
+  padding: 10px 16px; border-top: 1px solid var(--border);
 }
 .btn {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: var(--fs);
+  padding: 6px 16px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg-elevated); color: var(--fg);
+  cursor: pointer; font-family: var(--font-ui); font-size: var(--fs);
 }
 .btn:hover { background: var(--bg-hover); }
 .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-/* search dialog */
 .search-top { padding: 10px 14px 0; }
 .mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--fg-muted); font-size: 12px; }
-.mode-row select, .search-top input[type=text], .edit-fields input {
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-family: var(--font-ui);
-  font-size: var(--fs);
+.mode-row select, .search-top input[type=text], .edit-fields input, .index-select {
+  background: var(--bg-elevated); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; font-family: var(--font-ui); font-size: var(--fs);
 }
 .search-top input[type=text] { width: 100%; margin-bottom: 10px; }
 .search-header, .manage-header {
-  display: flex;
-  padding: 6px 14px;
+  display: flex; padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   font-weight: 600; font-size: 12px;
-  color: var(--fg);
 }
 .search-header span, .manage-header span { display: inline-block; }
 .col-code, .m-code { width: 90px; }
@@ -242,47 +237,35 @@ html, body {
 .m-ops { flex: 1; }
 .search-results, .manage-list { flex: 1; overflow: auto; min-height: 120px; }
 .search-row, .manage-row {
-  display: flex; align-items: center;
-  padding: 6px 14px;
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: calc(var(--fs) - 1px);
+  display: flex; align-items: center; padding: 6px 14px;
+  border-bottom: 1px solid var(--border); font-size: calc(var(--fs) - 0.5px);
 }
 .search-row:hover, .manage-row:hover { background: var(--bg-hover); }
-.search-row .col-market { color: var(--fg-muted); font-family: var(--font-ui); font-size: 11px; }
-.search-row .col-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-row .col-market { color: var(--fg-muted); font-size: 11px; }
+.search-row .col-name, .manage-row .m-name, .manage-row .m-custom {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .row-btn {
-  padding: 3px 10px;
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 12px;
+  padding: 3px 10px; border: 1px solid var(--accent); border-radius: 5px;
+  background: transparent; color: var(--accent); cursor: pointer; font-size: 12px;
 }
 .row-btn:hover { background: var(--accent); color: #fff; }
 .search-hint { padding: 24px; text-align: center; color: var(--fg-muted); }
 
-/* manage dialog */
 .manage-tabs { display: flex; border-bottom: 1px solid var(--border); }
 .mtab {
-  flex: 1; padding: 8px;
-  border: none; background: transparent;
+  flex: 1; padding: 8px; border: none; background: transparent;
   color: var(--fg-muted); cursor: pointer;
-  border-bottom: 2px solid transparent;
-  font-size: 12px; font-weight: 500;
+  border-bottom: 2px solid transparent; font-size: 12px; font-weight: 500;
 }
 .mtab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.manage-row .m-name, .manage-row .m-custom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manage-row .m-custom, .manage-row .m-cost, .manage-row .m-hold { color: var(--fg-muted); }
 .mini-btn {
-  border: none; background: transparent;
-  color: var(--accent); cursor: pointer;
-  font-size: 16px; padding: 0 6px;
+  border: none; background: transparent; color: var(--accent);
+  cursor: pointer; font-size: 16px; padding: 0 6px;
 }
 .mini-btn.danger { color: var(--danger); }
 
-/* edit dialog */
 .edit-fields { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .edit-fields label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-muted); font-size: 12px; }
 .field-error { color: var(--danger); font-size: 12px; min-height: 14px; }

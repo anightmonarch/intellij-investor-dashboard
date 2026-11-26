@@ -1,36 +1,36 @@
-/* Stocker WebView — UI logic. All data comes from Rust via openidea.postMessage. */
+/* Stocker WebView — UI logic. All data comes from Rust via openidea.postMessage.
+   Rendering mirrors StockerTableView.java exactly: centered columns, DecimalFormat
+   "0.00####" prices, all numeric columns tinted by the row's change%, one index
+   selected via a combo box, and price colors hidden on the selected row. */
 
-// ---- column definitions (13, matching StockerTableColumn) ----
+// ---- column definitions: key, Chinese label, align (all centered in the original) ----
 const COLUMNS = [
-  { key: 'symbol',        label: 'Symbol',   align: 'left'  },
-  { key: 'name',          label: 'Name',     align: 'left'  },
-  { key: 'current',       label: 'Current',  align: 'right' },
-  { key: 'opening',       label: 'Opening',  align: 'right' },
-  { key: 'close',         label: 'Close',    align: 'right' },
-  { key: 'low',           label: 'Low',      align: 'right' },
-  { key: 'high',          label: 'High',     align: 'right' },
-  { key: 'change',        label: 'Change',   align: 'right' },
-  { key: 'changePercent', label: 'Change%',  align: 'right' },
-  { key: 'cost',          label: 'Cost',     align: 'right' },
-  { key: 'holdings',      label: 'Holdings', align: 'right' },
-  { key: 'netProfit',     label: 'Net Profit', align: 'right' },
-  { key: 'dailyProfit',   label: 'Daily P/L', align: 'right' },
+  { key: 'symbol',        label: '代码' },
+  { key: 'name',          label: '名称' },
+  { key: 'current',       label: '现价' },
+  { key: 'opening',       label: '开盘' },
+  { key: 'close',         label: '收盘' },
+  { key: 'low',           label: '最低' },
+  { key: 'high',          label: '最高' },
+  { key: 'change',        label: '涨跌额' },
+  { key: 'changePercent', label: '涨跌幅' },
+  { key: 'cost',          label: '成本' },
+  { key: 'holdings',      label: '持仓' },
+  { key: 'netProfit',     label: '净收益额' },
+  { key: 'dailyProfit',   label: '当日盈亏' },
 ];
-const NUMERIC = new Set(['current','opening','close','low','high','change','changePercent','cost','holdings','netProfit','dailyProfit']);
-const COLORED = new Set(['change','changePercent','netProfit','dailyProfit']);
-const DEFAULT_VISIBLE = ['name','current','changePercent'];
+const DEFAULT_VISIBLE = ['name', 'current', 'changePercent'];
+// Columns tinted by the row's change% sign (NumericCellRenderer: current/open/close/low/high,
+// plus change, changePercent, cost(inverted), netProfit, dailyProfit). Holdings & name stay neutral.
+const PRICE_COLS = new Set(['current', 'opening', 'close', 'low', 'high']);
 
 // ---- state ----
-let state = {
-  visibleColumns: DEFAULT_VISIBLE.slice(),
-  colorPattern: 'rugd',
-  languageOverride: '',
-};
-let quotes = {};           // market key -> array of quotes (camelCase from Rust)
+let state = { visibleColumns: DEFAULT_VISIBLE.slice(), colorPattern: 'rugd' };
+let quotes = {};              // market -> quotes[]
 let activeMarket = 'all';
-let sort = { column: -1, dir: 0 };   // dir: 0 none, 1 asc, 2 desc
-let sortBackup = [];
+let sort = { column: -1, dir: 0 };
 let selectedCode = null;
+let indexSelectedCode = null; // remember the chosen index across refreshes
 
 // ---- bridge ----
 function send(msg) {
@@ -40,37 +40,25 @@ function send(msg) {
 }
 if (window.openidea && typeof window.openidea.onMessage === 'function') {
   window.openidea.onMessage(function (raw) {
-    let msg;
-    try { msg = JSON.parse(raw); } catch (e) { return; }
+    let msg; try { msg = JSON.parse(raw); } catch (e) { return; }
     switch (msg.op) {
       case 'state':
         state = Object.assign({}, state, msg.state);
-        applyTheme();
-        renderHead();
-        renderTable();
+        applyTheme(); renderHead(); renderTable();
         break;
       case 'quotes':
         quotes = msg.quotes || {};
-        renderTable();
-        renderIndexBar();
+        renderTable(); renderIndexBar();
         break;
-      case 'added':
-      case 'removed':
-        // Rust follows up with a quotes message; nothing to do here.
-        break;
-      case 'error':
-        flash(msg.message);
-        break;
-      case 'suggestions':
-        renderSuggestions(msg.items || []);
-        break;
+      case 'error': flash(msg.message); break;
+      case 'suggestions': renderSuggestions(msg.items || []); break;
     }
   });
 }
 
 function applyTheme() {
-  const cp = state.colorPattern;
   const root = document.documentElement;
+  const cp = state.colorPattern;
   if (cp === 'gurd') {
     root.style.setProperty('--up', '#43a047');
     root.style.setProperty('--down', '#e53935');
@@ -83,61 +71,81 @@ function applyTheme() {
   }
 }
 
-// ---- formatting (ported from StockerQuoteUpdateListener + renderer) ----
-function fmtPrice(v) {
-  if (v === null || v === undefined || isNaN(v)) return '-';
-  const abs = Math.abs(v);
-  // 0.00#### : at least 2 decimals, up to 6 for small crypto prices
-  let decimals = 2;
-  if (abs > 0 && abs < 1) decimals = 6;
-  else if (abs > 0 && abs < 10) decimals = 4;
-  return Number(v).toFixed(decimals).replace(/\.?0+$/, m => m.includes('.') ? '' : m);
+// ---- formatting: mirror Java DecimalFormat ----
+// "0.00####" — at least 2 decimals, up to 6, trailing '#' zeros dropped.
+function decimalFormat(v, minDecimals, maxDecimals) {
+  if (v === null || v === undefined || isNaN(v)) return null;
+  let fixed = Number(v).toFixed(maxDecimals);
+  let [int, dec] = fixed.split('.');
+  while (dec.length > minDecimals && dec.endsWith('0')) dec = dec.slice(0, -1);
+  return int + (dec ? '.' + dec : '');
 }
-function fmtSigned(v, decimals = 2) {
+function price(v) { return decimalFormat(v, 2, 6); }
+function signed(v, minDec, maxDec) {
   if (v === null || v === undefined || isNaN(v)) return '-';
-  const s = Number(v).toFixed(decimals);
-  return (v > 0 ? '+' : '') + s;
+  const text = decimalFormat(v, minDec, maxDec);
+  return (v > 0 ? '+' : '') + text;
 }
-function fmtIndex(v) {
-  if (v === null || v === undefined || isNaN(v)) return '-';
-  return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Double.toString() semantics used by the Change% cell value in the original:
+// quote.percentage + "%" keeps only meaningful decimals (e.g. 1.9, 0.4).
+function plainDouble(v) {
+  if (v === null || v === undefined || isNaN(v)) return '';
+  return String(Number(v));
 }
 function valueFor(q, key) {
   switch (key) {
-    case 'symbol': return q.code || '';
+    case 'symbol': {
+      let code = q.code || '';
+      if (code.startsWith('BTC') && code.length > 3) code = code.slice(3);  // strip BTC prefix
+      return code;
+    }
     case 'name': return q.displayName || q.name || '';
-    case 'current': return fmtPrice(q.current);
-    case 'opening': return fmtPrice(q.opening);
-    case 'close': return fmtPrice(q.close);
-    case 'low': return fmtPrice(q.low);
-    case 'high': return fmtPrice(q.high);
-    case 'change': return fmtSigned(q.change, 2);
-    case 'changePercent': return fmtSigned(q.percentage, 2) + '%';
-    case 'cost': return (q.cost === null || q.cost === undefined) ? '-' : Number(q.cost).toFixed(3);
-    case 'holdings': return (q.holdings === null || q.holdings === undefined) ? '-' : String(q.holdings);
-    case 'netProfit': {
-      if (q.cost == null || q.holdings == null) return '-';
-      return Number((q.current - q.cost) * q.holdings).toFixed(3);
+    case 'current': return price(q.current) ?? '-';
+    case 'opening': return price(q.opening) ?? '-';
+    case 'close': return price(q.close) ?? '-';
+    case 'low': return price(q.low) ?? '-';
+    case 'high': return price(q.high) ?? '-';
+    case 'change': return signed(q.change, 2, 6);
+    case 'changePercent': {
+      const p = q.percentage;
+      if (p === null || p === undefined || isNaN(p)) return '-';
+      return (p > 0 ? '+' : '') + plainDouble(p) + '%';
     }
-    case 'dailyProfit': {
-      if (q.holdings == null) return '-';
-      return Number(q.change * q.holdings).toFixed(3);
-    }
+    case 'cost': return (q.cost == null) ? '-' : Number(q.cost).toFixed(3);
+    case 'holdings': return (q.holdings == null) ? '-' : String(q.holdings);
+    case 'netProfit': return (q.cost == null || q.holdings == null) ? '-'
+      : Number((q.current - q.cost) * q.holdings).toFixed(3);
+    case 'dailyProfit': return (q.holdings == null) ? '-'
+      : Number(q.change * q.holdings).toFixed(3);
     default: return '';
   }
 }
+// Price color is driven by the row's change% for every numeric column.
+function colorClass(q, key) {
+  if (!PRICE_COLS.has(key) && key !== 'change' && key !== 'changePercent'
+      && key !== 'netProfit' && key !== 'dailyProfit') return '';
+  let v;
+  if (key === 'change') v = q.change;
+  else if (key === 'changePercent') v = q.percentage;
+  else if (key === 'netProfit') v = (q.cost == null || q.holdings == null) ? null : (q.current - q.cost) * q.holdings;
+  else if (key === 'dailyProfit') v = (q.holdings == null) ? null : q.change * q.holdings;
+  else v = q.percentage;  // price columns follow change%
+  if (v === null || v === undefined || isNaN(v)) return '';
+  return v > 0 ? 'up' : (v < 0 ? 'down' : 'zero');
+}
+// Cost column uses inverted color: cost > current => loss (down), cost < current => profit (up).
+function costColor(q) {
+  if (q.cost == null) return '';
+  return q.cost > q.current ? 'down' : (q.cost < q.current ? 'up' : 'zero');
+}
 function rawFor(q, key) {
   switch (key) {
+    case 'symbol': return q.code || '';
+    case 'name': return q.displayName || q.name || '';
     case 'netProfit': return (q.cost == null || q.holdings == null) ? null : (q.current - q.cost) * q.holdings;
-    case 'dailyProfit': return q.holdings == null ? null : q.change * q.holdings;
+    case 'dailyProfit': return (q.holdings == null) ? null : q.change * q.holdings;
     default: return q[key];
   }
-}
-function colorClass(q, key) {
-  if (!COLORED.has(key)) return '';
-  const v = rawFor(q, key);
-  if (v === null || v === undefined || v === 0 || isNaN(v)) return '';
-  return v > 0 ? 'up' : 'down';
 }
 
 // ---- rendering ----
@@ -146,22 +154,18 @@ function visibleColumns() {
   if (cols.length === 0) cols = COLUMNS.filter(c => DEFAULT_VISIBLE.includes(c.key));
   return cols;
 }
-
 function renderHead() {
   const cols = visibleColumns();
   const head = document.getElementById('head-row');
   head.innerHTML = '';
   cols.forEach((c, i) => {
     const th = document.createElement('th');
-    th.style.width = c.key === 'symbol' ? '80px' : (c.key === 'name' ? '100px' : '');
-    let label = c.label;
-    if (sort.column === i) label += `<span class="sort">${sort.dir === 1 ? '▲' : '▼'}</span>`;
-    th.innerHTML = label;
+    th.style.width = c.key === 'symbol' ? '80px' : (c.key === 'name' ? '100px' : '66px');
+    th.textContent = c.label + (sort.column === i ? (sort.dir === 1 ? ' ▲' : ' ▼') : '');
     th.onclick = () => onSort(i);
     head.appendChild(th);
   });
 }
-
 function currentQuotes() {
   let list = (quotes[activeMarket] || []).slice();
   if (sort.column >= 0 && sort.dir !== 0) {
@@ -171,78 +175,71 @@ function currentQuotes() {
       const asc = sort.dir === 1;
       list.sort((a, b) => {
         const av = rawFor(a, key), bv = rawFor(b, key);
-        if (typeof av === 'number' && typeof bv === 'number') {
-          return asc ? av - bv : bv - av;
-        }
-        const as = String(av ?? ''), bs = String(bv ?? '');
-        return asc ? as.localeCompare(bs) : bs.localeCompare(as);
+        if (typeof av === 'number' && typeof bv === 'number') return asc ? av - bv : bv - av;
+        return asc ? String(av ?? '').localeCompare(String(bv ?? ''))
+                   : String(bv ?? '').localeCompare(String(av ?? ''));
       });
     }
   }
   return list;
 }
-
 function renderTable() {
   const cols = visibleColumns();
   const list = currentQuotes();
   const tbody = document.getElementById('body-row');
   tbody.innerHTML = '';
   document.getElementById('empty').classList.toggle('hidden', list.length > 0);
-
   list.forEach(q => {
     const tr = document.createElement('tr');
     if (q.code === selectedCode) tr.classList.add('selected');
     cols.forEach((c) => {
       const td = document.createElement('td');
       td.textContent = valueFor(q, c.key);
-      if (c.align === 'right' || NUMERIC.has(c.key)) td.classList.add('num');
-      if (c.key === 'symbol') td.classList.add('code');
-      const cc = colorClass(q, c.key);
+      const cc = c.key === 'cost' ? costColor(q) : colorClass(q, c.key);
       if (cc) td.classList.add(cc);
-      if ((c.key === 'change' || c.key === 'changePercent') && (q.change > 0)) td.classList.add('positive');
       tr.appendChild(td);
     });
     tr.onclick = () => { selectedCode = q.code; renderTable(); };
     tr.oncontextmenu = (e) => {
-      e.preventDefault();
-      selectedCode = q.code;
-      renderTable();
-      showCtxMenu(e.clientX, e.clientY);
+      e.preventDefault(); selectedCode = q.code; renderTable(); showCtxMenu(e.clientX, e.clientY);
     };
     tbody.appendChild(tr);
   });
 }
-
 function onSort(col) {
-  if (sort.column !== col) {
-    sort = { column: col, dir: 1 };
-  } else if (sort.dir === 1) {
-    sort.dir = 2;
-  } else if (sort.dir === 2) {
-    sort = { column: -1, dir: 0 };
-  } else {
-    sort = { column: col, dir: 1 };
-  }
-  renderHead();
-  renderTable();
+  if (sort.column !== col) sort = { column: col, dir: 1 };
+  else if (sort.dir === 1) sort.dir = 2;
+  else if (sort.dir === 2) sort = { column: -1, dir: 0 };
+  else sort = { column: col, dir: 1 };
+  renderHead(); renderTable();
 }
-
 function renderIndexBar() {
-  // Prefer the active market's indices, then fall back to CN.
-  let indices = quotes[activeMarket + '_index'] || quotes['cn_index'] || [];
-  const bar = document.getElementById('index-bar');
-  bar.innerHTML = '';
+  const indices = quotes[activeMarket + '_index'] || quotes['cn_index'] || [];
+  const sel = document.getElementById('index-select');
+  const old = indexSelectedCode;
+  sel.innerHTML = '';
   indices.forEach(q => {
-    const item = document.createElement('div');
-    item.className = 'index-item';
-    const up = q.change > 0, down = q.change < 0;
-    item.innerHTML =
-      `<span class="index-name">${q.code}</span>` +
-      `<span class="index-value">${fmtIndex(q.current)}</span>` +
-      `<span class="${up ? 'up' : down ? 'down' : ''}">${fmtSigned(q.change, 2)}</span>` +
-      `<span class="${up ? 'up' : down ? 'down' : ''}">${fmtSigned(q.percentage, 2)}%</span>`;
-    bar.appendChild(item);
+    const opt = document.createElement('option');
+    opt.value = q.code;
+    opt.textContent = q.displayName || q.name;
+    sel.appendChild(opt);
   });
+  if (old && indices.some(q => q.code === old)) sel.value = old;
+  else if (indices.length) indexSelectedCode = sel.value;
+  sel.onchange = () => { indexSelectedCode = sel.value; renderIndexBar(); };
+  if (!sel.options.length) {
+    ['idx-value', 'idx-extent', 'idx-percent'].forEach(id => document.getElementById(id).textContent = '');
+    return;
+  }
+  const q = indices.find(x => x.code === sel.value) || indices[0];
+  const v = q.percentage > 0 ? 'up' : (q.percentage < 0 ? 'down' : 'zero');
+  const ev = document.getElementById('idx-value');
+  const ee = document.getElementById('idx-extent');
+  const ep = document.getElementById('idx-percent');
+  ev.textContent = Number(q.current).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  ee.textContent = signed(q.change, 2, 2);
+  ep.textContent = signed(q.percentage, 2, 6) + '%';
+  [ev, ee, ep].forEach(el => { el.className = 'idx-cell ' + v; });
 }
 
 // ---- tabs / toolbar ----
@@ -252,25 +249,30 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     activeMarket = tab.dataset.market;
     sort = { column: -1, dir: 0 };
-    renderTable();
-    renderIndexBar();
+    indexSelectedCode = null;
+    renderTable(); renderIndexBar();
   };
 });
-
 document.getElementById('btn-add').onclick = () => openSearch();
 document.getElementById('btn-refresh').onclick = () => send({ op: 'refresh' });
 document.getElementById('btn-stop').onclick = () => send({ op: 'stop' });
 document.getElementById('btn-manage').onclick = () => openManage();
-document.getElementById('btn-settings').onclick = () => flash('Configure columns/provider in Settings › Plugins › Stocker');
+document.getElementById('btn-settings').onclick = () => flash('在 设置 › 插件 › Stocker 中配置');
+document.getElementById('btn-close').onclick = () => flash('可从工具窗口栏再次打开 Stocker');
 document.getElementById('search-close').onclick = () => closeModal('search-dialog');
 document.getElementById('manage-cancel').onclick = () => closeModal('manage-dialog');
-document.getElementById('manage-ok').onclick = () => closeModal('manage-dialog');
+document.getElementById('manage-ok').onclick = () => {
+  Object.keys(manageEdits).forEach(code => {
+    const e = manageEdits[code];
+    send({ op: 'setMeta', code, customName: e.customName, cost: e.cost, holdings: e.holdings });
+  });
+  closeModal('manage-dialog');
+};
 
 // ---- context menu ----
 function showCtxMenu(x, y) {
   const menu = document.getElementById('ctx-menu');
-  menu.style.left = x + 'px';
-  menu.style.top = y + 'px';
+  menu.style.left = x + 'px'; menu.style.top = y + 'px';
   menu.classList.remove('hidden');
 }
 document.addEventListener('click', () => document.getElementById('ctx-menu').classList.add('hidden'));
@@ -287,64 +289,45 @@ const searchMode = document.getElementById('search-mode');
 function openSearch() {
   document.getElementById('search-dialog').classList.remove('hidden');
   searchInput.value = '';
-  searchInput.placeholder = searchMode.value === 'crypto' ? 'Type to search crypto' : 'Type to search stocks (CN/HK/US)';
-  document.getElementById('search-results').innerHTML = '<div class="search-hint">Type to search</div>';
+  onModeChange();
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">输入以搜索</div>';
   searchInput.focus();
+}
+function onModeChange() {
+  searchInput.placeholder = searchMode.value === 'crypto' ? '输入以搜索加密货币' : '输入以搜索股票（A股/港股/美股）';
 }
 searchInput.oninput = () => {
   clearTimeout(searchTimer);
   const key = searchInput.value.trim();
-  if (!key) {
-    document.getElementById('search-results').innerHTML = '<div class="search-hint">Type to search</div>';
-    return;
-  }
-  document.getElementById('search-results').innerHTML = '<div class="search-hint">Searching…</div>';
-  searchTimer = setTimeout(() => {
-    send({ op: 'suggest', key, mode: searchMode.value });
-  }, 300);
+  if (!key) { document.getElementById('search-results').innerHTML = '<div class="search-hint">输入以搜索</div>'; return; }
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">搜索中…</div>';
+  searchTimer = setTimeout(() => send({ op: 'suggest', key, mode: searchMode.value }), 300);
 };
-searchMode.onchange = () => {
-  searchInput.placeholder = searchMode.value === 'crypto' ? 'Type to search crypto' : 'Type to search stocks (CN/HK/US)';
-  searchInput.dispatchEvent(new Event('input'));
-};
+searchMode.onchange = () => { onModeChange(); searchInput.dispatchEvent(new Event('input')); };
 function renderSuggestions(items) {
   const box = document.getElementById('search-results');
   box.innerHTML = '';
-  if (items.length === 0) {
-    box.innerHTML = '<div class="search-hint">No results</div>';
-    return;
-  }
+  if (!items.length) { box.innerHTML = '<div class="search-hint">无结果</div>'; return; }
   items.forEach(s => {
-    const row = document.createElement('div');
-    row.className = 'search-row';
+    const row = document.createElement('div'); row.className = 'search-row';
     const added = isAdded(s.code, s.market);
     const name = s.name.length > 25 ? s.name.slice(0, 25) + '…' : s.name;
     row.innerHTML =
       `<span class="col-code">${s.code}</span>` +
       `<span class="col-market">${marketTitle(s.market)}</span>` +
       `<span class="col-name" title="${s.name}">${name}</span>` +
-      `<span class="col-action"><button class="row-btn">${added ? 'Delete' : 'Add'}</button></span>`;
+      `<span class="col-action"><button class="row-btn">${added ? '删除' : '添加'}</button></span>`;
     row.querySelector('button').onclick = (e) => {
-      if (added) {
-        send({ op: 'remove', code: s.code });
-        e.target.textContent = 'Add';
-      } else {
-        send({ op: 'add', market: s.market, code: s.code, name: s.name });
-        e.target.textContent = 'Delete';
-      }
+      if (added) { send({ op: 'remove', code: s.code }); e.target.textContent = '添加'; }
+      else { send({ op: 'add', market: s.market, code: s.code, name: s.name }); e.target.textContent = '删除'; }
     };
     box.appendChild(row);
   });
 }
-function isAdded(code, market) {
+function isAdded(code) {
   const lists = (state && state.watchlists) || {};
   for (const m of ['cn','hk','us','crypto']) {
-    const list = lists[m] || [];
-    if (list.some(c => c.toUpperCase() === String(code).toUpperCase())) return true;
-  }
-  // Fallback: scan loaded quotes
-  for (const m of ['cn','hk','us','crypto']) {
-    if ((quotes[m] || []).some(q => q.code === code)) return true;
+    if ((lists[m] || []).some(c => c.toUpperCase() === String(code).toUpperCase())) return true;
   }
   return false;
 }
@@ -352,60 +335,41 @@ function marketTitle(k) { return ({cn:'CN',hk:'HK',us:'US',crypto:'Crypto'})[k] 
 
 // ---- manage dialog ----
 let manageMarket = 'cn';
-let manageEdits = {};  // code -> {customName, cost, holdings}
-function openManage() {
-  manageEdits = {};
-  // Seed from currently displayed quotes across markets
-  document.getElementById('manage-dialog').classList.remove('hidden');
-  renderManage();
-}
+let manageEdits = {};
+function openManage() { manageEdits = {}; document.getElementById('manage-dialog').classList.remove('hidden'); renderManage(); }
 document.querySelectorAll('.mtab').forEach(tab => {
   tab.onclick = () => {
     document.querySelectorAll('.mtab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    manageMarket = tab.dataset.market;
-    renderManage();
+    tab.classList.add('active'); manageMarket = tab.dataset.market; renderManage();
   };
 });
 function renderManage() {
-  const box = document.getElementById('manage-list');
-  box.innerHTML = '';
+  const box = document.getElementById('manage-list'); box.innerHTML = '';
   const list = quotes[manageMarket] || [];
-  if (list.length === 0) {
-    box.innerHTML = '<div class="search-hint">No favorites in this market yet</div>';
-    return;
-  }
+  if (!list.length) { box.innerHTML = '<div class="search-hint">该市场暂无自选</div>'; return; }
   list.forEach(q => {
-    const row = document.createElement('div');
-    row.className = 'manage-row';
+    const row = document.createElement('div'); row.className = 'manage-row';
     const edit = manageEdits[q.code] || {};
-    const custom = edit.customName !== undefined ? edit.customName : (q.cost !== undefined ? '' : '');
+    const custom = edit.customName !== undefined ? edit.customName : '';
     row.innerHTML =
       `<span class="m-code">${q.code}</span>` +
       `<span class="m-name" title="${q.name}">${q.name}</span>` +
       `<span class="m-custom">${custom || '-'}</span>` +
       `<span class="m-cost">${q.cost != null ? Number(q.cost).toFixed(3) : '-'}</span>` +
       `<span class="m-hold">${q.holdings != null ? q.holdings : '-'}</span>` +
-      `<span class="m-ops"><button class="mini-btn" title="Edit">&#9998;</button><button class="mini-btn danger" title="Delete">&#215;</button></span>`;
+      `<span class="m-ops"><button class="mini-btn" title="编辑">&#9998;</button><button class="mini-btn danger" title="删除">&#215;</button></span>`;
     row.querySelectorAll('.mini-btn')[0].onclick = () => openEdit(q);
     row.querySelectorAll('.mini-btn')[1].onclick = () => send({ op: 'remove', code: q.code });
     box.appendChild(row);
   });
 }
-document.getElementById('manage-ok').onclick = () => {
-  Object.keys(manageEdits).forEach(code => {
-    const e = manageEdits[code];
-    send({ op: 'setMeta', code, customName: e.customName, cost: e.cost, holdings: e.holdings });
-  });
-  closeModal('manage-dialog');
-};
 
 // ---- edit dialog ----
 let editingCode = null;
 function openEdit(q) {
   editingCode = q.code;
-  document.getElementById('edit-title').textContent = 'Edit ' + q.code;
-  document.getElementById('edit-name').value = q.displayName && q.displayName !== q.name ? q.displayName : '';
+  document.getElementById('edit-title').textContent = '编辑 ' + q.code;
+  document.getElementById('edit-name').value = (q.displayName && q.displayName !== q.name) ? q.displayName : '';
   document.getElementById('edit-cost').value = q.cost != null ? Number(q.cost).toFixed(3) : '';
   document.getElementById('edit-holdings').value = q.holdings != null ? String(q.holdings) : '';
   document.getElementById('edit-error').textContent = '';
@@ -418,47 +382,58 @@ document.getElementById('edit-ok').onclick = () => {
   const holdText = document.getElementById('edit-holdings').value.trim();
   const costVal = costText ? parseFloat(costText) : null;
   const holdVal = holdText ? parseInt(holdText, 10) : null;
-  if (costText && (isNaN(costVal))) {
-    document.getElementById('edit-error').textContent = 'Enter a valid number';
-    return;
-  }
-  if (holdText && (isNaN(holdVal))) {
-    document.getElementById('edit-error').textContent = 'Enter a whole number';
-    return;
-  }
-  manageEdits[editingCode] = {
-    customName: name || null,
-    cost: costVal,
-    holdings: holdVal,
-  };
+  if (costText && isNaN(costVal)) { document.getElementById('edit-error').textContent = '请输入有效数字'; return; }
+  if (holdText && isNaN(holdVal)) { document.getElementById('edit-error').textContent = '请输入整数'; return; }
+  manageEdits[editingCode] = { customName: name || null, cost: costVal, holdings: holdVal };
   closeModal('edit-dialog');
 };
 
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    document.querySelectorAll('.modal:not(.hidden)').forEach(m => m.classList.add('hidden'));
-  }
+  if (e.key === 'Escape') document.querySelectorAll('.modal:not(.hidden)').forEach(m => m.classList.add('hidden'));
 });
-
-// ---- transient toast ----
 function flash(msg) {
   let el = document.getElementById('toast');
   if (!el) {
-    el = document.createElement('div');
-    el.id = 'toast';
-    el.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 14px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.2);font-size:12px;';
+    el = document.createElement('div'); el.id = 'toast';
+    el.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:8px 14px;z-index:300;box-shadow:0 2px 8px rgba(0,0,0,.25);font-size:12px;';
     document.body.appendChild(el);
   }
-  el.textContent = msg;
-  el.style.display = 'block';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.style.display = 'none'; }, 2500);
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(el._t); el._t = setTimeout(() => { el.style.display = 'none'; }, 2500);
 }
 
 // ---- boot ----
-applyTheme();
-renderHead();
-renderTable();
-send({ op: 'ready' });
-setInterval(() => send({ op: 'refresh' }), 5000);
+applyTheme(); renderHead(); renderTable();
+const IN_IDEA = !!(window.openidea && typeof window.openidea.postMessage === 'function');
+if (IN_IDEA) {
+  send({ op: 'ready' });
+  setInterval(() => send({ op: 'refresh' }), 5000);
+} else {
+  // Preview mode (standalone browser): show representative data so the layout
+  // can be reviewed without the OpenIDEA host. Never active inside the IDE.
+  loadPreviewData();
+}
+
+function loadPreviewData() {
+  const raw = [
+    ['sh600887','伊利股份',33.29,-0.86],['sh600900','长江电力',31.85,-0.34],
+    ['sz300750','比音勒芬',28.18,-1.09],['sz000333','美的集团',94.97,0.88],
+    ['sh603288','牧原股份',43.49,-1.38],['sh513100','纳100ETF',1.966,2.88],
+    ['sh600009','申通快递',14.00,0.29],['sz002648','卫星化学',23.32,2.73],
+    ['sh601928','儒意电影',9.75,-1.22],['sh600977','中国电影',14.65,-1.08],
+    ['sh600028','恒逸石化',10.95,0.74],['sh603993','洛阳钼业',11.82,1.9],
+    ['sh601600','中国铝业',7.47,0.4],
+  ];
+  quotes.cn = raw.map(([code, name, cur, pct]) => ({
+    code, name, displayName: name, current: cur, opening: cur, close: cur,
+    low: cur, high: cur, change: Number((cur * pct / 100).toFixed(2)),
+    percentage: pct, updateAt: '', cost: null, holdings: null,
+  }));
+  quotes.all = quotes.cn.slice();
+  quotes['cn_index'] = [{
+    code: 'SH000001', name: '上证指数', displayName: '上证指数',
+    current: 3481.04, change: 4.57, percentage: 0.13,
+  }];
+  renderTable(); renderIndexBar();
+}
