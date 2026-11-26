@@ -117,6 +117,90 @@
   </div>
 </div>
 
+<!-- Settings dialog: 1:1 replica of the original Stocker settings page -->
+<div id="settings-dialog" class="modal hidden">
+  <div class="settings-shell">
+    <div class="settings-head">
+      <span class="settings-crumb">Tools › Stocker</span>
+      <span class="settings-hint">插件的设置；项目可以覆盖。</span>
+    </div>
+    <div class="settings-body">
+      <!-- 通用 -->
+      <section class="set-group">
+        <h3 class="set-group-title">通用</h3>
+        <div class="set-row">
+          <label class="set-label" for="set-language">语言：</label>
+          <div class="set-control">
+            <select id="set-language" class="set-select">
+              <option value="">跟随系统语言</option>
+              <option value="en">英语</option>
+              <option value="zh_CN">简体中文</option>
+            </select>
+            <p class="set-comment">更改后立即应用到表格视图</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 数据提供商 -->
+      <section class="set-group">
+        <h3 class="set-group-title">数据提供商</h3>
+        <div class="set-row">
+          <label class="set-label" for="set-provider">股票行情源：</label>
+          <div class="set-control">
+            <select id="set-provider" class="set-select">
+              <option value="sina">新浪</option>
+              <option value="tencent">腾讯</option>
+            </select>
+            <p class="set-comment">选择股票行情的数据源（A股、港股、美股）</p>
+          </div>
+        </div>
+        <div class="set-row">
+          <label class="set-label" for="set-crypto-provider">加密货币行情源：</label>
+          <div class="set-control">
+            <select id="set-crypto-provider" class="set-select" disabled>
+              <option value="sina">新浪</option>
+            </select>
+            <p class="set-comment">加密货币行情仅支持新浪数据源</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 表格显示 -->
+      <section class="set-group">
+        <h3 class="set-group-title">表格显示</h3>
+        <div class="set-row">
+          <span class="set-label">颜色模式：</span>
+          <div class="set-control">
+            <label class="set-radio"><input type="radio" name="colorPattern" value="rugd"><span>红涨绿跌</span>
+              <p class="set-comment">传统亚洲市场配色方案</p></label>
+            <label class="set-radio"><input type="radio" name="colorPattern" value="gurd"><span>绿涨红跌</span>
+              <p class="set-comment">西方市场配色方案</p></label>
+            <label class="set-radio"><input type="radio" name="colorPattern" value="none"><span>无颜色编码</span>
+              <p class="set-comment">所有数值使用默认文本颜色显示</p></label>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-label">名称格式：</span>
+          <div class="set-control">
+            <label class="set-check"><input type="checkbox" id="set-pinyin"><span>将中文名称转换为拼音</span></label>
+            <p class="set-comment">示例：平安银行 -> PingAnYinHang</p>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-label">可见列：</span>
+          <div class="set-control set-columns" id="set-columns"></div>
+        </div>
+        <p id="set-columns-warning" class="set-warning hidden">请至少保留一列可见列。</p>
+      </section>
+    </div>
+    <div class="modal-footer settings-footer">
+      <button id="settings-cancel" class="btn">取消</button>
+      <button id="settings-apply" class="btn">应用</button>
+      <button id="settings-ok" class="btn primary">确定</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

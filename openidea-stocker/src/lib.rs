@@ -211,7 +211,14 @@ impl Main {
                 self.reply(&OutMsg::Suggestions { items: result });
             }
             InMsg::UpdateSettings { state } => {
-                self.state = state;
+                // Merge a partial patch so watchlists/metadata are never wiped.
+                if let Some(v) = state.language_override { self.state.language_override = v; }
+                if let Some(v) = state.quote_provider { self.state.quote_provider = v; }
+                if let Some(v) = state.crypto_quote_provider { self.state.crypto_quote_provider = v; }
+                if let Some(v) = state.display_name_with_pinyin { self.state.display_name_with_pinyin = v; }
+                if let Some(v) = state.color_pattern { self.state.color_pattern = v; }
+                if let Some(v) = state.visible_columns { self.state.visible_columns = v; }
+                if let Some(v) = state.refresh_interval { self.state.refresh_interval = v.max(60); }
                 self.save_state();
                 self.refresh();
             }
@@ -252,7 +259,20 @@ enum InMsg {
     Remove { code: String },
     SetMeta { code: String, custom_name: Option<String>, cost: Option<f64>, holdings: Option<f64> },
     Suggest { key: String, mode: String },
-    UpdateSettings { state: State },
+    UpdateSettings { state: SettingsPatch },
+}
+
+/// Partial settings update from the WebView settings dialog.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsPatch {
+    #[serde(default)] language_override: Option<String>,
+    #[serde(default)] quote_provider: Option<model::Provider>,
+    #[serde(default)] crypto_quote_provider: Option<model::Provider>,
+    #[serde(default)] display_name_with_pinyin: Option<bool>,
+    #[serde(default)] color_pattern: Option<model::ColorPattern>,
+    #[serde(default)] visible_columns: Option<Vec<String>>,
+    #[serde(default)] refresh_interval: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -284,7 +304,12 @@ impl Plugin for Main {
                 self.stop();
                 Ok(Some("Favorites cleared".into()))
             }
-            "add" | "manage" | "settings" => {
+            "settings" => {
+                host::reveal_view(VIEW)?;
+                let _ = host::post_view_message(VIEW, r#"{"op":"openSettings"}"#);
+                Ok(None)
+            }
+            "add" | "manage" => {
                 host::reveal_view(VIEW)?;
                 Ok(None)
             }

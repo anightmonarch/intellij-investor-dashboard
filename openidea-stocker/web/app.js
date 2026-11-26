@@ -52,6 +52,7 @@ if (window.openidea && typeof window.openidea.onMessage === 'function') {
         break;
       case 'error': flash(msg.message); break;
       case 'suggestions': renderSuggestions(msg.items || []); break;
+      case 'openSettings': openSettings(); break;
     }
   });
 }
@@ -257,7 +258,7 @@ document.getElementById('btn-add').onclick = () => openSearch();
 document.getElementById('btn-refresh').onclick = () => send({ op: 'refresh' });
 document.getElementById('btn-stop').onclick = () => send({ op: 'stop' });
 document.getElementById('btn-manage').onclick = () => openManage();
-document.getElementById('btn-settings').onclick = () => flash('在 设置 › 插件 › Stocker 中配置');
+document.getElementById('btn-settings').onclick = () => openSettings();
 document.getElementById('btn-close').onclick = () => flash('可从工具窗口栏再次打开 Stocker');
 document.getElementById('search-close').onclick = () => closeModal('search-dialog');
 document.getElementById('manage-cancel').onclick = () => closeModal('manage-dialog');
@@ -387,6 +388,80 @@ document.getElementById('edit-ok').onclick = () => {
   manageEdits[editingCode] = { customName: name || null, cost: costVal, holdings: holdVal };
   closeModal('edit-dialog');
 };
+
+// ---- settings dialog (1:1 replica) ----
+const COLUMN_LABELS = {
+  symbol: '代码', name: '名称', current: '现价', opening: '开盘', close: '收盘',
+  low: '最低', high: '最高', change: '涨跌额', changePercent: '涨跌幅',
+  cost: '成本', holdings: '持仓', netProfit: '净收益额', dailyProfit: '当日盈亏',
+};
+const COLUMN_KEYS = Object.keys(COLUMN_LABELS);
+
+function openSettings() {
+  // Populate the 13 visible-column checkboxes.
+  const box = document.getElementById('set-columns');
+  box.innerHTML = '';
+  const visible = state.visibleColumns || DEFAULT_VISIBLE;
+  COLUMN_KEYS.forEach(key => {
+    const label = document.createElement('label');
+    label.className = 'set-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = key; cb.checked = visible.includes(key);
+    cb.onchange = () => {
+      const checked = Array.from(box.querySelectorAll('input:checked')).map(i => i.value);
+      document.getElementById('set-columns-warning').classList.toggle('hidden', checked.length > 0);
+    };
+    const span = document.createElement('span');
+    span.textContent = COLUMN_LABELS[key];
+    label.appendChild(cb); label.appendChild(span);
+    box.appendChild(label);
+  });
+  // Populate current values.
+  document.getElementById('set-language').value = state.languageOverride || '';
+  document.getElementById('set-provider').value = state.quoteProvider || 'sina';
+  document.getElementById('set-crypto-provider').value = state.cryptoQuoteProvider || 'sina';
+  document.getElementById('set-pinyin').checked = !!state.displayNameWithPinyin;
+  const cp = state.colorPattern || 'rugd';
+  const radios = document.querySelectorAll('input[name="colorPattern"]');
+  radios.forEach(r => { r.checked = (r.value === cp); });
+  document.getElementById('set-columns-warning').classList.add('hidden');
+  document.getElementById('settings-dialog').classList.remove('hidden');
+}
+
+function collectSettings() {
+  const box = document.getElementById('set-columns');
+  const columns = Array.from(box.querySelectorAll('input:checked')).map(i => i.value);
+  const cp = document.querySelector('input[name="colorPattern"]:checked');
+  return {
+    languageOverride: document.getElementById('set-language').value,
+    quoteProvider: document.getElementById('set-provider').value,
+    cryptoQuoteProvider: document.getElementById('set-crypto-provider').value,
+    displayNameWithPinyin: document.getElementById('set-pinyin').checked,
+    colorPattern: cp ? cp.value : 'rugd',
+    visibleColumns: columns,
+  };
+}
+
+function applySettings(close) {
+  const box = document.getElementById('set-columns');
+  const checked = Array.from(box.querySelectorAll('input:checked'));
+  if (checked.length === 0) {
+    document.getElementById('set-columns-warning').classList.remove('hidden');
+    return;
+  }
+  const patch = collectSettings();
+  // Update local state immediately so the UI reflects the change without waiting.
+  state = Object.assign({}, state, patch);
+  applyTheme();
+  renderHead(); renderTable(); renderIndexBar();
+  send({ op: 'updateSettings', state: patch });
+  if (close) closeModal('settings-dialog');
+  else flash('设置已应用');
+}
+
+document.getElementById('settings-ok').onclick = () => applySettings(true);
+document.getElementById('settings-apply').onclick = () => applySettings(false);
+document.getElementById('settings-cancel').onclick = () => closeModal('settings-dialog');
 
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 document.addEventListener('keydown', (e) => {
