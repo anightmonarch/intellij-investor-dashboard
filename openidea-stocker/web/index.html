@@ -66,14 +66,18 @@
           <option value="crypto">加密货币</option>
         </select>
       </div>
-      <input id="search-input" type="text" placeholder="输入以搜索股票（A股/港股/美股）" autocomplete="off">
+      <div class="search-field">
+        <span class="search-icon">&#128269;</span>
+        <input id="search-input" type="text" placeholder="输入以搜索股票（A股/港股/美股）" autocomplete="off">
+        <button id="search-clear" class="search-clear hidden" title="清除">&#10005;</button>
+      </div>
       <div class="search-header">
         <span class="col-code">代码</span><span class="col-market">市场</span>
         <span class="col-name">名称</span><span class="col-action">操作</span>
       </div>
     </div>
     <div id="search-results" class="search-results"></div>
-    <div class="modal-footer"><button id="search-close" class="btn">关闭</button></div>
+    <div class="modal-footer"><button id="search-close" class="btn">Close</button></div>
   </div>
 </div>
 
@@ -92,10 +96,16 @@
       <span class="m-custom">自定义名称</span><span class="m-cost">成本</span>
       <span class="m-hold">持仓</span><span class="m-ops"></span>
     </div>
+    <div class="manage-toolbar">
+      <button id="mt-edit" class="mt-btn" title="编辑自选">&#9998;</button>
+      <button id="mt-up" class="mt-btn" title="上移">&#8593;</button>
+      <button id="mt-down" class="mt-btn" title="下移">&#8595;</button>
+      <button id="mt-delete" class="mt-btn danger" title="删除自选">&#215;</button>
+    </div>
     <div id="manage-list" class="manage-list"></div>
     <div class="modal-footer">
-      <button id="manage-ok" class="btn primary">确定</button>
-      <button id="manage-cancel" class="btn">取消</button>
+      <button id="manage-ok" class="btn primary">OK</button>
+      <button id="manage-cancel" class="btn">Cancel</button>
     </div>
   </div>
 </div>

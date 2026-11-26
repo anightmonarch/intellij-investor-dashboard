@@ -95,7 +95,7 @@ impl Main {
             // Favorites only (drop index rows) for the per-market tab.
             let favorites: Vec<Quote> = quotes
                 .iter()
-                .filter(|q| self.state.list(market).contains(&q.code))
+                .filter(|q| self.state.contains(&q.code))
                 .cloned()
                 .collect();
             all.extend(favorites.clone());
@@ -115,8 +115,8 @@ impl Main {
     fn decorate(&self, quotes: &mut [Quote]) {
         for q in quotes.iter_mut() {
             q.display_name = self.state.display_name(&q.code, &q.name);
-            q.cost = self.state.cost_prices.get(&q.code).copied();
-            q.holdings = self.state.holdings.get(&q.code).copied();
+            q.cost = self.state.cost_of(&q.code);
+            q.holdings = self.state.holdings_of(&q.code);
         }
     }
 
@@ -170,6 +170,14 @@ impl Main {
                 self.state.remove(&code);
                 self.save_state();
                 self.reply(&OutMsg::Removed { code });
+                self.refresh();
+            }
+            InMsg::Reorder { market, codes } => {
+                // Mirrors StockerManagementDialog OK: the dialog's list becomes
+                // the whole watchlist for that market, preserving order.
+                let m = parse_market(&market);
+                *self.state.list_mut(m) = codes;
+                self.save_state();
                 self.refresh();
             }
             InMsg::SetMeta { code, custom_name, cost, holdings } => {
@@ -257,6 +265,7 @@ enum InMsg {
     Clear,
     Add { market: String, code: String, name: String },
     Remove { code: String },
+    Reorder { market: String, codes: Vec<String> },
     SetMeta { code: String, custom_name: Option<String>, cost: Option<f64>, holdings: Option<f64> },
     Suggest { key: String, mode: String },
     UpdateSettings { state: SettingsPatch },

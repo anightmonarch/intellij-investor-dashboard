@@ -220,7 +220,11 @@ html, body {
   border: 1px solid var(--border); border-radius: 6px;
   padding: 6px 8px; font-family: var(--font-ui); font-size: var(--fs);
 }
-.search-top input[type=text] { width: 100%; margin-bottom: 10px; }
+.search-field { position: relative; display: flex; align-items: center; margin-bottom: 10px; }
+.search-field input[type=text] { width: 100%; padding-left: 30px; padding-right: 28px; }
+.search-icon { position: absolute; left: 9px; color: var(--fg-muted); font-size: 13px; pointer-events: none; }
+.search-clear { position: absolute; right: 6px; border: none; background: transparent; color: var(--fg-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; }
+.search-clear:hover { color: var(--fg); }
 .search-header, .manage-header {
   display: flex; padding: 6px 14px;
   border-bottom: 1px solid var(--border);
@@ -253,6 +257,17 @@ html, body {
 .search-hint { padding: 24px; text-align: center; color: var(--fg-muted); }
 
 .manage-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.manage-toolbar { display: flex; gap: 2px; padding: 3px 8px; border-bottom: 1px solid var(--border); }
+.mt-btn {
+  width: 24px; height: 22px;
+  border: none; background: transparent; color: var(--fg-muted);
+  border-radius: 4px; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.mt-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg); }
+.mt-btn:disabled { opacity: .35; cursor: default; }
+.mt-btn.danger:hover:not(:disabled) { color: var(--danger); }
+.manage-row.selected { background: var(--bg-selected); }
 .mtab {
   flex: 1; padding: 8px; border: none; background: transparent;
   color: var(--fg-muted); cursor: pointer;

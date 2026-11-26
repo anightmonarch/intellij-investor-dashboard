@@ -33,9 +33,22 @@ let selectedCode = null;
 let indexSelectedCode = null; // remember the chosen index across refreshes
 
 // ---- bridge ----
+const IN_IDEA = !!(window.openidea && typeof window.openidea.postMessage === 'function');
 function send(msg) {
-  if (window.openidea && typeof window.openidea.postMessage === 'function') {
+  if (IN_IDEA) {
     window.openidea.postMessage(JSON.stringify(msg));
+  } else if (msg.op === 'suggest') {
+    // Preview-only mock so the dialog can be visually reviewed without the host.
+    setTimeout(() => {
+      const demo = [
+        { code: 'SH600887', name: '伊利股份', market: 'cn' },
+        { code: 'ETN', name: '伊顿', market: 'us' },
+        { code: 'ITW', name: '伊利诺工具', market: 'us' },
+        { code: 'WYNN', name: '永利', market: 'us' },
+        { code: 'AVY', name: '艾利', market: 'us' },
+      ];
+      renderSuggestions(msg.mode === 'crypto' ? [] : demo);
+    }, 250);
   }
 }
 if (window.openidea && typeof window.openidea.onMessage === 'function') {
@@ -263,10 +276,14 @@ document.getElementById('btn-close').onclick = () => flash('可从工具窗口�
 document.getElementById('search-close').onclick = () => closeModal('search-dialog');
 document.getElementById('manage-cancel').onclick = () => closeModal('manage-dialog');
 document.getElementById('manage-ok').onclick = () => {
-  Object.keys(manageEdits).forEach(code => {
+  // Commit each market's working list as a whole (order preserved), then metadata.
+  for (const m of ['cn','hk','us','crypto']) {
+    send({ op: 'reorder', market: m, codes: (manageWork[m] || []).map(x => x.code) });
+  }
+  for (const code of Object.keys(manageEdits)) {
     const e = manageEdits[code];
     send({ op: 'setMeta', code, customName: e.customName, cost: e.cost, holdings: e.holdings });
-  });
+  }
   closeModal('manage-dialog');
 };
 
@@ -290,6 +307,7 @@ const searchMode = document.getElementById('search-mode');
 function openSearch() {
   document.getElementById('search-dialog').classList.remove('hidden');
   searchInput.value = '';
+  document.getElementById('search-clear').classList.add('hidden');
   onModeChange();
   document.getElementById('search-results').innerHTML = '<div class="search-hint">输入以搜索</div>';
   searchInput.focus();
@@ -299,12 +317,18 @@ function onModeChange() {
 }
 searchInput.oninput = () => {
   clearTimeout(searchTimer);
+  document.getElementById('search-clear').classList.toggle('hidden', searchInput.value.length === 0);
   const key = searchInput.value.trim();
   if (!key) { document.getElementById('search-results').innerHTML = '<div class="search-hint">输入以搜索</div>'; return; }
   document.getElementById('search-results').innerHTML = '<div class="search-hint">搜索中…</div>';
   searchTimer = setTimeout(() => send({ op: 'suggest', key, mode: searchMode.value }), 300);
 };
 searchMode.onchange = () => { onModeChange(); searchInput.dispatchEvent(new Event('input')); };
+document.getElementById('search-clear').onclick = () => {
+  searchInput.value = '';
+  searchInput.dispatchEvent(new Event('input'));
+  searchInput.focus();
+};
 function renderSuggestions(items) {
   const box = document.getElementById('search-results');
   box.innerHTML = '';
@@ -335,34 +359,89 @@ function isAdded(code) {
 function marketTitle(k) { return ({cn:'CN',hk:'HK',us:'US',crypto:'Crypto'})[k] || k; }
 
 // ---- manage dialog ----
+// The dialog edits a working copy of each market's watchlist. OK commits the
+// whole list back (order included), mirroring StockerManagementDialog's OkAction.
 let manageMarket = 'cn';
-let manageEdits = {};
-function openManage() { manageEdits = {}; document.getElementById('manage-dialog').classList.remove('hidden'); renderManage(); }
+let manageWork = {};          // market -> [{code,name,customName,cost,holdings}]
+let manageSelected = -1;
+let manageEdits = {};         // committed metadata changes at OK time
+
+function openManage() {
+  manageEdits = {};
+  manageWork = {};
+  for (const m of ['cn','hk','us','crypto']) {
+    manageWork[m] = (quotes[m] || []).map(q => ({
+      code: q.code, name: q.name,
+      customName: (q.displayName && q.displayName !== q.name) ? q.displayName : '',
+      cost: q.cost != null ? q.cost : null,
+      holdings: q.holdings != null ? q.holdings : null,
+    }));
+    // Keep stored codes that failed to load as placeholders (like the original).
+    const loaded = new Set(manageWork[m].map(x => x.code.toUpperCase()));
+    for (const code of ((state.watchlists || {})[m] || [])) {
+      if (!loaded.has(String(code).toUpperCase())) {
+        manageWork[m].push({ code, name: code, customName: '', cost: null, holdings: null });
+      }
+    }
+  }
+  manageSelected = -1;
+  document.getElementById('manage-dialog').classList.remove('hidden');
+  renderManage();
+}
 document.querySelectorAll('.mtab').forEach(tab => {
   tab.onclick = () => {
     document.querySelectorAll('.mtab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active'); manageMarket = tab.dataset.market; renderManage();
+    tab.classList.add('active'); manageMarket = tab.dataset.market;
+    manageSelected = -1; renderManage();
   };
 });
 function renderManage() {
   const box = document.getElementById('manage-list'); box.innerHTML = '';
-  const list = quotes[manageMarket] || [];
-  if (!list.length) { box.innerHTML = '<div class="search-hint">该市场暂无自选</div>'; return; }
-  list.forEach(q => {
-    const row = document.createElement('div'); row.className = 'manage-row';
-    const edit = manageEdits[q.code] || {};
-    const custom = edit.customName !== undefined ? edit.customName : '';
+  const list = manageWork[manageMarket] || [];
+  if (!list.length) { box.innerHTML = '<div class="search-hint">该市场暂无自选</div>'; updateManageToolbar(); return; }
+  list.forEach((q, i) => {
+    const row = document.createElement('div');
+    row.className = 'manage-row' + (i === manageSelected ? ' selected' : '');
     row.innerHTML =
       `<span class="m-code">${q.code}</span>` +
       `<span class="m-name" title="${q.name}">${q.name}</span>` +
-      `<span class="m-custom">${custom || '-'}</span>` +
+      `<span class="m-custom">${q.customName || '-'}</span>` +
       `<span class="m-cost">${q.cost != null ? Number(q.cost).toFixed(3) : '-'}</span>` +
       `<span class="m-hold">${q.holdings != null ? q.holdings : '-'}</span>` +
-      `<span class="m-ops"><button class="mini-btn" title="编辑">&#9998;</button><button class="mini-btn danger" title="删除">&#215;</button></span>`;
-    row.querySelectorAll('.mini-btn')[0].onclick = () => openEdit(q);
-    row.querySelectorAll('.mini-btn')[1].onclick = () => send({ op: 'remove', code: q.code });
+      `<span class="m-ops"></span>`;
+    row.onclick = () => { manageSelected = i; renderManage(); };
     box.appendChild(row);
   });
+  updateManageToolbar();
+}
+function updateManageToolbar() {
+  const list = manageWork[manageMarket] || [];
+  const hasSel = manageSelected >= 0 && manageSelected < list.length;
+  document.getElementById('mt-edit').disabled = !hasSel;
+  document.getElementById('mt-delete').disabled = !hasSel;
+  document.getElementById('mt-up').disabled = !hasSel || manageSelected === 0;
+  document.getElementById('mt-down').disabled = !hasSel || manageSelected === list.length - 1;
+}
+document.getElementById('mt-edit').onclick = () => {
+  const q = (manageWork[manageMarket] || [])[manageSelected];
+  if (q) openEdit(q);
+};
+document.getElementById('mt-delete').onclick = () => {
+  const list = manageWork[manageMarket] || [];
+  if (manageSelected < 0 || manageSelected >= list.length) return;
+  list.splice(manageSelected, 1);
+  if (manageSelected >= list.length) manageSelected = list.length - 1;
+  renderManage();
+};
+document.getElementById('mt-up').onclick = () => moveSelected(-1);
+document.getElementById('mt-down').onclick = () => moveSelected(1);
+function moveSelected(delta) {
+  const list = manageWork[manageMarket] || [];
+  const j = manageSelected + delta;
+  if (manageSelected < 0 || j < 0 || j >= list.length) return;
+  [list[manageSelected], list[j]] = [list[j], list[manageSelected]];
+  manageSelected = j;
+  renderManage();
 }
 
 // ---- edit dialog ----
@@ -370,7 +449,7 @@ let editingCode = null;
 function openEdit(q) {
   editingCode = q.code;
   document.getElementById('edit-title').textContent = '编辑 ' + q.code;
-  document.getElementById('edit-name').value = (q.displayName && q.displayName !== q.name) ? q.displayName : '';
+  document.getElementById('edit-name').value = q.customName || '';
   document.getElementById('edit-cost').value = q.cost != null ? Number(q.cost).toFixed(3) : '';
   document.getElementById('edit-holdings').value = q.holdings != null ? String(q.holdings) : '';
   document.getElementById('edit-error').textContent = '';
@@ -385,8 +464,17 @@ document.getElementById('edit-ok').onclick = () => {
   const holdVal = holdText ? parseInt(holdText, 10) : null;
   if (costText && isNaN(costVal)) { document.getElementById('edit-error').textContent = '请输入有效数字'; return; }
   if (holdText && isNaN(holdVal)) { document.getElementById('edit-error').textContent = '请输入整数'; return; }
+  // Update the working-copy row so the manage list reflects the edit immediately.
+  const list = manageWork[manageMarket] || [];
+  const row = list.find(x => x.code === editingCode);
+  if (row) {
+    row.customName = name || '';
+    row.cost = costVal;
+    row.holdings = holdVal;
+  }
   manageEdits[editingCode] = { customName: name || null, cost: costVal, holdings: holdVal };
   closeModal('edit-dialog');
+  renderManage();
 };
 
 // ---- settings dialog (1:1 replica) ----
@@ -480,7 +568,6 @@ function flash(msg) {
 
 // ---- boot ----
 applyTheme(); renderHead(); renderTable();
-const IN_IDEA = !!(window.openidea && typeof window.openidea.postMessage === 'function');
 if (IN_IDEA) {
   send({ op: 'ready' });
   setInterval(() => send({ op: 'refresh' }), 5000);

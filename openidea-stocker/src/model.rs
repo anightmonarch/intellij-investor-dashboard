@@ -193,24 +193,40 @@ impl State {
         self.watchlists.entry(market.key().to_string()).or_default()
     }
 
+    /// Case-insensitive match: API codes come back uppercase (SH600887) while
+    /// search suggestions may be lowercase (sh600887).
     pub fn contains(&self, code: &str) -> bool {
-        self.watchlists.values().any(|v| v.iter().any(|c| c == code))
+        let up = code.to_uppercase();
+        self.watchlists.values().any(|v| v.iter().any(|c| c.to_uppercase() == up))
+    }
+
+    /// Return the stored code (in its original case) matching `code`, if any.
+    #[allow(dead_code)]
+    pub fn stored_code(&self, code: &str) -> Option<String> {
+        let up = code.to_uppercase();
+        self.watchlists.values().flatten().find(|c| c.to_uppercase() == up).cloned()
     }
 
     #[allow(dead_code)]
     pub fn market_of(&self, code: &str) -> Option<Market> {
-        Market::all().into_iter().find(|m| self.list(*m).iter().any(|c| c == code))
+        let up = code.to_uppercase();
+        Market::all().into_iter().find(|m| self.list(*m).iter().any(|c| c.to_uppercase() == up))
     }
 
     pub fn remove(&mut self, code: &str) {
+        let up = code.to_uppercase();
         for m in Market::all() {
-            self.list_mut(m).retain(|c| c != code);
+            self.list_mut(m).retain(|c| c.to_uppercase() != up);
         }
+        self.custom_names.retain(|k, _| k.to_uppercase() != up);
+        self.cost_prices.retain(|k, _| k.to_uppercase() != up);
+        self.holdings.retain(|k, _| k.to_uppercase() != up);
     }
 
     /// Display name priority: custom name > pinyin > original name.
     pub fn display_name(&self, code: &str, original: &str) -> String {
-        if let Some(custom) = self.custom_names.get(code) {
+        let up = code.to_uppercase();
+        if let Some((_, custom)) = self.custom_names.iter().find(|(k, _)| k.to_uppercase() == up) {
             if !custom.is_empty() {
                 return custom.clone();
             }
@@ -219,6 +235,16 @@ impl State {
             return crate::pinyin::to_pinyin(original);
         }
         original.to_string()
+    }
+
+    pub fn cost_of(&self, code: &str) -> Option<f64> {
+        let up = code.to_uppercase();
+        self.cost_prices.iter().find(|(k, _)| k.to_uppercase() == up).map(|(_, v)| *v)
+    }
+
+    pub fn holdings_of(&self, code: &str) -> Option<i64> {
+        let up = code.to_uppercase();
+        self.holdings.iter().find(|(k, _)| k.to_uppercase() == up).map(|(_, v)| *v)
     }
 }
 
