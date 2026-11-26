@@ -28,6 +28,39 @@ openidea-plugin link             # load this folder in the IDE (Settings > Plugi
 Then in OpenIDEA: **Settings › Plugins** → allow the plugin (approve the network
 and storage permissions) → open the **Stocker** tool window on the left.
 
+`dist/` is a build artifact and is not committed: after pulling, run
+`openidea-plugin build` again, then reload the plugin in the IDE. A stale
+`dist/plugin.wasm` keeps the old behaviour while the sources look right.
+
+## How the refresh works
+
+OpenIDEA gives a plugin call a **hard 5 s wall clock** (`Limits::timeout`) and
+stops a plugin for the session after three consecutive timeouts. The original
+plugin fetched four markets plus four index sets from a background
+`ScheduledExecutorService`, which has no equivalent in a WASM component — doing
+it inside one call is what made this port hang and then go silent.
+
+So the **page owns the loop**: every `refreshInterval` seconds (5 by default) it
+asks for one market at a time,
+
+```
+page  → {op:'refresh', market:'cn'}      one HTTP request, well inside the budget
+plugin → {op:'quotes', market:'cn', items:[…], indices:[…]}
+page  → {op:'refresh', market:'hk'}      …and so on, cn → hk → us → crypto
+```
+
+Every mutation (`add`, `remove`, `reorder`, `setMeta`, `updateSettings`) and the
+`on-schedule:60` event only reply `{op:'tick'}`; the page then runs the round.
+A plugin call therefore never makes more than one request.
+
+## When nothing responds
+
+The toolbar shows a small dot when the page is loaded but the plugin never
+answers, and a search that times out says so in the results list. That means the
+plugin is disabled, is waiting for the network permission, or was stopped after
+repeated timeouts — check **Settings › Plugins › Stocker**. The dot disappears
+once the plugin replies.
+
 ## Permissions
 
 - `storage`: watchlist, cost price, holdings and preferences (local only).
@@ -41,10 +74,11 @@ No data leaves the machine other than the quote/search HTTP requests.
 
 ## Notes
 
-- The visible tab refreshes every 5s via the WebView timer; `on-schedule:60`
-  keeps a background refresh alive (OpenIDEA's minimum scheduled interval is 60s).
 - Sina quotes are GBK-encoded and decoded with `encoding_rs`.
-- Settings for provider/color pattern/pinyin live in **Settings › Plugins › Stocker**.
+- Provider, color pattern and pinyin conversion are in **Settings › Plugins ›
+  Stocker**; the tool window's own settings dialog mirrors the original's page.
+- `refreshInterval` is deliberately absent from `settings.schema.json`: a native
+  default there would override the original's 5 s on every activation.
 
 ## License
 
